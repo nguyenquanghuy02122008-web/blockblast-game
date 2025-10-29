@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Block Blast by beta</title>
+  <meta name="description" content="Block Blast by beta — mini HTML game (ghost preview, combo, sound, colored pieces)" />
+  <style>
+    :root{
+      --cell-size:40px;
+      --bg:#f6f8fa;
+      --board-bg:#ffffff;
+      --accent:#3b82f6;
+      --muted:#6b7280;
+      --danger:#ef4444;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;background:var(--bg);color:#111}
+    .wrap{max-width:980px;margin:26px auto;padding:18px}
+    .header{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    h1{margin:0;font-size:20px;color:var(--accent)}
+    .subtitle{font-size:13px;color:var(--muted)}
+    .stats{display:flex;gap:10px;align-items:center;margin-left:auto}
+    .stat{background:#fff;padding:8px 12px;border-radius:10px;box-shadow:0 1px 3px rgba(2,6,23,0.06);font-weight:600}
+    .controls{display:flex;gap:8px;align-items:center}
+    button{cursor:pointer;border:0;padding:8px 12px;border-radius:10px;font-weight:600}
+    .btn-reset{background:var(--danger);color:#fff}
+    .btn-sound{background:var(--accent);color:#fff}
+    .btn-sound.off{background:#9ca3af;color:#fff}
+    .layout{display:flex;gap:20px;align-items:flex-start;margin-top:16px;flex-wrap:wrap}
+    .board{
+      background:var(--board-bg);padding:12px;border-radius:12px;
+      box-shadow:0 6px 18px rgba(15,23,42,0.06);
+      display:grid;
+      grid-template-columns:repeat(8,var(--cell-size));
+      grid-template-rows:repeat(8,var(--cell-size));
+      gap:6px;user-select:none;position:relative;
+    }
+    .cell{width:var(--cell-size);height:var(--cell-size);border-radius:8px;border:1px solid rgba(0,0,0,0.06);background:#f3f4f6;display:flex;align-items:center;justify-content:center;transition:background .08s, transform .06s}
+    .cell.hover{background:#e6f0ff}
+    .cell.filled{box-shadow:inset 0 -4px 0 rgba(0,0,0,0.08)}
+    .cell.ghost-valid{box-shadow:inset 0 0 0 2px rgba(59,130,246,0.22); filter:brightness(1.05)}
+    .cell.ghost-invalid{box-shadow:inset 0 0 0 2px rgba(239,68,68,0.22); filter:brightness(0.98)}
+    .panel{min-width:240px;background:#fff;padding:12px;border-radius:12px;box-shadow:0 6px 18px rgba(15,23,42,0.06)}
+    .pieces{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+    .piece{padding:8px;border-radius:10px;border:1px dashed rgba(15,23,42,0.06);background:#fbfbfb;cursor:grab;display:inline-grid;gap:6px}
+    .piece:active{cursor:grabbing}
+    .p-row{display:flex;gap:6px}
+    .p-cell{width:18px;height:18px;border-radius:4px;background:transparent;border:1px solid rgba(0,0,0,0.04)}
+    .p-cell.on{border:0}
+    .hint{font-size:13px;color:var(--muted);margin-top:10px}
+    .combo-bar-wrap{position:absolute;left:50%;transform:translateX(-50%);top:-74px;width:460px;max-width:94%;z-index:80;pointer-events:none}
+    .combo-bar{background:rgba(255,255,255,0.98);padding:8px;border-radius:12px;backdrop-filter:blur(4px);display:flex;flex-direction:column;gap:6px;pointer-events:auto}
+    .combo-text{font-weight:800;color:#111;display:flex;justify-content:space-between;align-items:center;font-size:14px}
+    .combo-progress{height:10px;background:rgba(0,0,0,0.06);border-radius:999px;overflow:hidden;border:1px solid rgba(0,0,0,0.06)}
+    .combo-fill{height:100%;width:0%;transition:width .45s cubic-bezier(.22,.9,.36,1), background .25s}
+    .combo-fill.level-1{background:linear-gradient(90deg,#facc15,#f97316)}
+    .combo-fill.level-2{background:linear-gradient(90deg,#fb923c,#f97316)}
+    .combo-fill.level-3{background:linear-gradient(90deg,#fb7185,#fb923c)}
+    .combo-fill.level-4{background:linear-gradient(90deg,#ef4444,#fb7185)}
+    .combo-fill.level-5{background:linear-gradient(90deg,#ef4444,#c026d3)}
+    .warning-topright{position:fixed;right:18px;top:18px;background:var(--danger);color:#fff;padding:8px 12px;border-radius:10px;box-shadow:0 8px 30px rgba(239,68,68,0.18);font-weight:700;display:none;z-index:999}
+    .gameover{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;padding:22px;border-radius:12px;box-shadow:0 18px 60px rgba(2,6,23,0.2);display:none;z-index:1000;text-align:center}
+    .small{font-size:13px;color:var(--muted)}
+    @media(max-width:720px){.layout{flex-direction:column;align-items:center}.panel{width:100%}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div>
+        <h1>🧱 Block Blast by beta</h1>
+        <div class="subtitle">Ghost preview • Combo • Sound • Responsive</div>
+      </div>
+
+      <div class="stats" style="margin-left:auto">
+        <div class="stat">Điểm: <span id="score">0</span></div>
+        <div class="stat">Kỷ lục: <span id="high">0</span></div>
+        <div class="controls">
+          <button id="soundBtn" class="btn-sound">🔊 Âm</button>
+          <button id="resetBtn" class="btn-reset">🔄 Chơi lại</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="layout" style="margin-top:14px">
+      <div style="position:relative">
+        <div class="combo-bar-wrap" id="comboBarWrap" aria-hidden="true" style="display:none">
+          <div class="combo-bar" id="comboBar">
+            <div class="combo-text"><span id="comboText">🔥 COMBO x2</span><span id="comboPoints">+20</span></div>
+            <div class="combo-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+              <div id="comboFill" class="combo-fill level-1" style="width:0%"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="board" class="board" aria-label="game board"></div>
+      </div>
+
+      <div class="panel">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <strong>Khối hiện tại (3 khối)</strong>
+          <small class="small">Đặt xong cả 3 → có bộ mới</small>
+        </div>
+
+        <div id="pieces" class="pieces"></div>
+
+        <div class="hint">• Kéo-thả (desktop) hoặc chạm chọn khối rồi chạm ô (mobile).<br>• Khi kéo/di chuyển, xem trước vị trí (xanh = hợp lệ, đỏ = không hợp lệ).</div>
+
+        <div style="margin-top:12px" class="small">
+          Luật điểm: mỗi hàng/cột xoá = 10 điểm. Điểm = base × (số hàng+cột xoá trong lượt) × comboStreak. <br>
+          Combo reset nếu bạn đặt <strong>3 lượt liên tiếp</strong> mà không phá.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="warning" class="warning-topright" aria-live="polite">⚠️ Combo sắp hết (2/3)</div>
+
+  <div id="gameover" class="gameover">
+    <h2>Game Over</h2>
+    <p id="go-text" class="small">Không thể đặt khối nào — trò chơi kết thúc.</p>
+    <div style="margin-top:12px">
+      <button id="go-restart" style="background:var(--accent);color:#fff;padding:8px 12px;border-radius:8px;border:0">Chơi lại</button>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    // CONFIG
+    const ROWS = 8, COLS = 8;
+    const BASE_POINTS = 10;
+    const MAX_BAR_LEVEL = 10; // visual cap for progress bar
+    const MISS_LIMIT = 3;     // combo resets after 3 misses
+    // A rich SHAPES set (about 20 shapes), each a matrix of 1/0
+    const SHAPES = [
+      // single
+      [[1]],
+      // pairs
+      [[1,1]],
+      [[1],[1]],
+      // triplets
+      [[1,1,1]],
+      [[1],[1],[1]],
+      // square 2x2
+      [[1,1],[1,1]],
+      // L shapes
+      [[1,0],[1,0],[1,1]],
+      [[0,1],[0,1],[1,1]],
+      [[1,1,1],[1,0,0]],
+      [[1,1,1],[0,0,1]],
+      // T
+      [[1,1,1],[0,1,0]],
+      // Z / S
+      [[1,1,0],[0,1,1]],
+      [[0,1,1],[1,1,0]],
+      // U (3x2)
+      [[1,0,1],[1,1,1]],
+      // plus-ish (cross 3x3 center)
+      [[0,1,0],[1,1,1],[0,1,0]],
+      // corner 2x2 then one down (small L variants)
+      [[1,0],[1,1]],
+      [[0,1],[1,1]],
+      // long 4
+      [[1,1,1,1]],
+      [[1],[1],[1],[1]],
+      // 3x3 block plus hole (a bulky shape)
+      [[1,1,1],[1,0,1],[1,1,1]],
+      // 2x3 rectangle
+      [[1,1,1],[1,1,1]]
+    ];
+
+    // Colors (bright, Block Blast-like)
+    const COLORS = [
+      '#f59e0b', // amber / yellow
+      '#f97316', // orange
+      '#ef4444', // red
+      '#fb7185', // pink
+      '#7c3aed', // purple
+      '#3b82f6', // blue
+      '#06b6d4', // cyan
+      '#10b981', // green
+      '#f43f5e', // rose
+      '#fbbf24', // yellow-2
+      '#8b5cf6', // violet
+      '#06b6d4', // repeat
+      '#06d6a0',
+      '#ff7b00',
+      '#ff4d6d',
+      '#00b4d8',
+      '#2dd4bf',
+      '#ffd166',
+      '#06d6a0',
+      '#ef476f'
+    ];
+
+    // GAME STATE
+    // grid stores null or a color string (hex)
+    let grid = Array.from({length:ROWS}, ()=>Array(COLS).fill(null));
+    // pieces: array of {shape: matrix, color: hex}
+    let pieces = [];
+    let selectedPiece = null; // {shape, idx, color}
+    let score = 0;
+    let high = parseInt(localStorage.getItem('blockblast_highscore')||'0',10);
+    let ghostCells = [];
+    let audioOn = true;
+    let comboStreak = 0;
+    let missCount = 0;
+
+    // DOM
+    const boardEl = document.getElementById('board');
+    const piecesEl = document.getElementById('pieces');
+    const scoreEl = document.getElementById('score');
+    const highEl = document.getElementById('high');
+    const resetBtn = document.getElementById('resetBtn');
+    const soundBtn = document.getElementById('soundBtn');
+    const comboBarWrap = document.getElementById('comboBarWrap');
+    const comboText = document.getElementById('comboText');
+    const comboPoints = document.getElementById('comboPoints');
+    const comboFill = document.getElementById('comboFill');
+    const warningEl = document.getElementById('warning');
+    const gameOverEl = document.getElementById('gameover');
+    const goRestart = document.getElementById('go-restart');
+    highEl.textContent = high;
+
+    // Audio helper (WebAudio)
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+    function ensureAudio(){ if(!AudioCtx) return null; if(!audioCtx) audioCtx = new AudioCtx(); return audioCtx; }
+    function playTone(freq,dur,gain){
+      if(!audioOn) return;
+      const ctx = ensureAudio(); if(!ctx) return;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = freq; g.gain.value = gain;
+      o.connect(g); g.connect(ctx.destination);
+      o.start(); o.stop(ctx.currentTime + dur);
+    }
+    function playPlace(){ playTone(600,0.06,0.04); }
+    function playScore(){ playTone(920,0.12,0.07); setTimeout(()=>playTone(760,0.08,0.06),90); }
+
+    // UTIL functions that now expect piece objects {shape,color}
+    function canPlaceAt(pieceShape, r, c, g = grid){
+      for(let pr=0; pr<pieceShape.length; pr++){
+        for(let pc=0; pc<pieceShape[0].length; pc++){
+          if(pieceShape[pr][pc]){
+            const rr = r+pr, cc = c+pc;
+            if(rr<0||cc<0||rr>=ROWS||cc>=COLS) return false;
+            if(g[rr][cc]) return false;
+          }
+        }
+      }
+      return true;
+    }
+    function existsPlacement(pieceShape, g = grid){
+      for(let r=0;r<ROWS;r++){
+        for(let c=0;c<COLS;c++){
+          if(canPlaceAt(pieceShape, r, c, g)) return true;
+        }
+      }
+      return false;
+    }
+    function anyPiecePlaceable(piecesArr, g = grid){
+      return piecesArr.some(p => existsPlacement(p.shape, g));
+    }
+
+    // Generate reasonable set of 3 pieces: ensure at least one is placeable
+    function generateReasonablePieces(){
+      for(let attempts=0; attempts<300; attempts++){
+        const arr = Array.from({length:3}, ()=>{
+          const idx = Math.floor(Math.random()*SHAPES.length);
+          const shape = SHAPES[idx];
+          const color = COLORS[Math.floor(Math.random()*COLORS.length)];
+          return { shape, color };
+        });
+        if(anyPiecePlaceable(arr, grid)) return arr;
+      }
+      // fallback scanning for at least one placeable then fill others random
+      const arr = [];
+      let foundOne = false;
+      for(let i=0;i<3;i++){
+        if(!foundOne){
+          for(const s of SHAPES){
+            if(existsPlacement(s, grid)){
+              arr.push({shape:s, color: COLORS[Math.floor(Math.random()*COLORS.length)]});
+              foundOne = true;
+              break;
+            }
+          }
+          if(!foundOne) arr.push({shape: SHAPES[Math.floor(Math.random()*SHAPES.length)], color: COLORS[Math.floor(Math.random()*COLORS.length)]});
+        } else {
+          arr.push({shape: SHAPES[Math.floor(Math.random()*SHAPES.length)], color: COLORS[Math.floor(Math.random()*COLORS.length)]});
+        }
+      }
+      if(anyPiecePlaceable(arr, grid)) return arr;
+      return null;
+    }
+
+    // RENDER BOARD: grid stores null or color hex
+    function renderBoard(){
+      boardEl.innerHTML = '';
+      for(let r=0;r<ROWS;r++){
+        for(let c=0;c<COLS;c++){
+          const div = document.createElement('div');
+          div.className = 'cell' + (grid[r][c] ? ' filled' : '');
+          div.dataset.r = r; div.dataset.c = c;
+          if(grid[r][c]){
+            div.style.background = grid[r][c];
+            div.style.boxShadow = 'inset 0 -4px 0 rgba(0,0,0,0.08)';
+          } else {
+            div.style.background = '';
+            div.style.boxShadow = '';
+          }
+
+          // dragover for ghost preview
+          div.addEventListener('dragover', e=>{
+            e.preventDefault();
+            if(selectedPiece) showGhost(selectedPiece.shape, r, c);
+          });
+          div.addEventListener('dragenter', ()=>div.classList.add('hover'));
+          div.addEventListener('dragleave', ()=>{ div.classList.remove('hover'); clearGhost(); });
+          div.addEventListener('drop', e=>{
+            e.preventDefault();
+            if(selectedPiece){
+              clearGhost();
+              const ok = placePiece(selectedPiece.shape, r, c, selectedPiece.color);
+              if(ok){ playPlace(); consumePiece(selectedPiece.idx); }
+              selectedPiece = null;
+              renderPieces();
+            }
+          });
+
+          // click for touch devices (place selected piece)
+          div.addEventListener('click', ()=>{
+            if(selectedPiece){
+              clearGhost();
+              const ok = placePiece(selectedPiece.shape, r, c, selectedPiece.color);
+              if(ok){ playPlace(); consumePiece(selectedPiece.idx); }
+              selectedPiece = null;
+              renderPieces();
+            }
+          });
+
+          boardEl.appendChild(div);
+        }
+      }
+    }
+
+    // RENDER PIECES: show color on p-cell.on
+    function renderPieces(){
+      piecesEl.innerHTML = '';
+      pieces.forEach((p, idx)=>{
+        const wrap = document.createElement('div');
+        wrap.className = 'piece'; wrap.draggable = true; wrap.dataset.idx = idx;
+        wrap.addEventListener('dragstart', (e)=>{
+          selectedPiece = { shape: p.shape, idx, color: p.color };
+          try{ e.dataTransfer.setData('text/plain', idx); }catch(e){}
+        });
+        wrap.addEventListener('click', ()=>{
+          if(selectedPiece && selectedPiece.idx === idx){ selectedPiece = null; clearGhost(); }
+          else selectedPiece = { shape: p.shape, idx, color: p.color };
+          highlightSelected();
+        });
+
+        // render each row / cell
+        p.shape.forEach(row=>{
+          const rdiv = document.createElement('div'); rdiv.className = 'p-row';
+          row.forEach(cell=>{
+            const pc = document.createElement('div'); pc.className = 'p-cell' + (cell ? ' on' : '');
+            if(cell){
+              // style colored block with slight gradient and shadow
+              pc.style.background = `linear-gradient(180deg, ${lighten(p.color,10)}, ${p.color})`;
+              pc.style.boxShadow = 'inset 0 -3px 0 rgba(0,0,0,0.08)';
+            }
+            rdiv.appendChild(pc);
+          });
+          wrap.appendChild(rdiv);
+        });
+
+        piecesEl.appendChild(wrap);
+      });
+      highlightSelected();
+    }
+
+    function highlightSelected(){
+      Array.from(piecesEl.children).forEach(el=>{
+        const idx = Number(el.dataset.idx);
+        if(selectedPiece && selectedPiece.idx === idx) el.style.outline = '3px solid rgba(59,130,246,0.12)';
+        else el.style.outline = '';
+      });
+    }
+
+    // Ghost preview functions (same visual classes used)
+    function clearGhost(){
+      ghostCells.forEach(([r,c])=>{
+        const cell = boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+        if(cell){ cell.classList.remove('ghost-valid','ghost-invalid'); cell.style.filter=''; }
+      });
+      ghostCells = [];
+    }
+    function showGhost(pieceShape, startR, startC){
+      clearGhost();
+      let valid = true;
+      const coords = [];
+      for(let r=0;r<pieceShape.length;r++){
+        for(let c=0;c<pieceShape[0].length;c++){
+          if(pieceShape[r][c]){
+            const rr = startR + r, cc = startC + c;
+            if(rr<0||cc<0||rr>=ROWS||cc>=COLS) valid = false;
+            else if(grid[rr][cc]) valid = false;
+            coords.push([rr,cc]);
+          }
+        }
+      }
+      coords.forEach(([r,c])=>{
+        const cell = boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+        if(cell) cell.classList.add(valid ? 'ghost-valid' : 'ghost-invalid');
+      });
+      ghostCells = coords;
+    }
+
+    // PLACE, CLEAR, SCORE, COMBO
+    function consumePiece(idx){
+      pieces = pieces.filter((_,i)=>i!==idx);
+      if(pieces.length === 0){
+        const newSet = generateReasonablePieces();
+        if(newSet === null){ onGameOver(); return; }
+        pieces = newSet;
+      } else {
+        // still pieces left: ensure any of them can be placed, otherwise game over
+        if(!anyPiecePlaceable(pieces, grid)){ onGameOver(); return; }
+      }
+      updateUI();
+    }
+
+    function placePiece(pieceShape, row, col, color){
+      if(!canPlaceAt(pieceShape, row, col)) return false;
+      // apply color to grid
+      for(let r=0;r<pieceShape.length;r++){
+        for(let c=0;c<pieceShape[0].length;c++){
+          if(pieceShape[r][c]) grid[row+r][col+c] = color;
+        }
+      }
+
+      // find cleared rows
+      const clearedRows = [];
+      for(let r=0;r<ROWS;r++) if(grid[r].every(v=>v !== null)) clearedRows.push(r);
+      // find cleared cols
+      const clearedCols = [];
+      for(let c=0;c<COLS;c++){
+        let full = true; for(let r=0;r<ROWS;r++) if(grid[r][c] === null){ full=false; break; }
+        if(full) clearedCols.push(c);
+      }
+
+      const totalCleared = clearedRows.length + clearedCols.length;
+
+      if(totalCleared > 0){
+        // clear rows
+        clearedRows.forEach(r => { grid[r] = Array(COLS).fill(null); });
+        // clear cols
+        clearedCols.forEach(c => { for(let r=0;r<ROWS;r++) grid[r][c] = null; });
+
+        // combo logic
+        comboStreak = comboStreak + 1;
+        missCount = 0;
+        const withinTurnMultiplier = Math.max(1, totalCleared);
+        const streakMultiplier = Math.max(1, comboStreak);
+        const gained = BASE_POINTS * withinTurnMultiplier * streakMultiplier;
+        score += gained;
+        if(score > high){ high = score; localStorage.setItem('blockblast_highscore', high); }
+        showComboBar(withinTurnMultiplier, streakMultiplier, gained);
+        playScore();
+      } else {
+        // miss: increase miss count & possibly warn/reset combo
+        missCount++;
+        if(missCount >= MISS_LIMIT){
+          comboStreak = 0;
+          hideComboBar();
+          hideWarning();
+        } else {
+          showWarning(missCount);
+        }
+      }
+
+      updateUI();
+      return true;
+    }
+
+    // combo bar visuals
+    let comboHideTimer = null;
+    function showComboBar(withinMul, streak, gained){
+      // show only when meaningful: streak>=2 or withinMul>1
+      if(streak < 2 && withinMul === 1){
+        comboBarWrap.style.display = 'none';
+        return;
+      }
+      comboText.textContent = `🔥 COMBO x${streak}`;
+      comboPoints.textContent = `+${gained}`;
+      // determine visual level based on streak relative to MAX_BAR_LEVEL
+      const level = Math.min(streak, MAX_BAR_LEVEL);
+      const pct = Math.min(100, (level / MAX_BAR_LEVEL) * 100);
+      const colorLevel = Math.min(Math.ceil((level / MAX_BAR_LEVEL) * 5), 5) || 1;
+      comboFill.className = 'combo-fill level-' + colorLevel;
+      comboFill.style.width = pct + '%';
+      comboBarWrap.style.display = 'block';
+      comboBarWrap.classList.add('show');
+      if(comboHideTimer) clearTimeout(comboHideTimer);
+      comboHideTimer = setTimeout(()=>{
+        comboBarWrap.classList.remove('show');
+        setTimeout(()=>{ comboBarWrap.style.display='none'; comboFill.style.width='0%'; }, 320);
+      }, 1600);
+      hideWarning();
+    }
+    function hideComboBar(){ comboBarWrap.classList.remove('show'); comboBarWrap.style.display='none'; comboFill.style.width='0%'; }
+
+    function showWarning(miss){
+      warningEl.textContent = `⚠️ Combo sắp hết (${miss}/${MISS_LIMIT})`;
+      warningEl.style.display = 'block';
+    }
+    function hideWarning(){ warningEl.style.display = 'none'; }
+
+    function onGameOver(){
+      gameOverEl.style.display = 'block';
+      document.getElementById('go-text').textContent = `Game Over — không có vị trí đặt cho các khối hiện tại. Điểm cuối: ${score}`;
+    }
+
+    function updateUI(){
+      renderBoard();
+      renderPieces();
+      scoreEl.textContent = score;
+      highEl.textContent = high;
+      if(missCount > 0 && missCount < MISS_LIMIT) showWarning(missCount);
+      else hideWarning();
+    }
+
+    // BUTTONS and keyboard
+    resetBtn.addEventListener('click', ()=>{
+      if(confirm('Chơi lại? Điểm hiện tại sẽ mất.')) startNewGame();
+    });
+    soundBtn.addEventListener('click', ()=>{
+      audioOn = !audioOn;
+      soundBtn.classList.toggle('off', !audioOn);
+      soundBtn.textContent = audioOn ? '🔊 Âm' : '🔇 Tắt âm';
+      if(audioOn) playTone(760,0.08,0.06);
+    });
+    goRestart.addEventListener('click', ()=>{
+      gameOverEl.style.display = 'none';
+      startNewGame();
+    });
+
+    // START / INIT
+    function startNewGame(){
+      grid = Array.from({length:ROWS}, ()=>Array(COLS).fill(null));
+      score = 0; comboStreak = 0; missCount = 0;
+      pieces = generateReasonablePieces() || [];
+      selectedPiece = null;
+      updateUI();
+    }
+
+    pieces = generateReasonablePieces() || [];
+    if(!pieces) onGameOver(); else updateUI();
+
+    window.addEventListener('keydown', (e)=>{
+      if(e.key >= '1' && e.key <= '3'){
+        const idx = Number(e.key) - 1;
+        if(pieces[idx]){ selectedPiece = {shape: pieces[idx].shape, idx, color: pieces[idx].color}; highlightSelected(); }
+      }
+      if(e.key === 'Escape'){ selectedPiece = null; clearGhost(); highlightSelected(); }
+    });
+
+    // tiny util to lighten a hex color by percent (for gradient)
+    function lighten(hex, percent){
+      // hex e.g. #rrggbb
+      const num = parseInt(hex.replace('#',''),16);
+      let r = (num >> 16) + Math.round(255 * (percent/100));
+      let g = ((num >> 8) & 0x00FF) + Math.round(255 * (percent/100));
+      let b = (num & 0x0000FF) + Math.round(255 * (percent/100));
+      r = Math.min(255, r); g = Math.min(255, g); b = Math.min(255, b);
+      return '#' + ( (1<<24) + (r<<16) + (g<<8) + b ).toString(16).slice(1);
+    }
+
+    // expose debug helpers if needed
+    window._bb = { grid, pieces, startNewGame };
+
+    // Prevent audio autoplay issues: resume audio on first interaction
+    function resumeAudioOnInteraction(){
+      try{
+        const ctx = ensureAudio();
+        if(ctx && ctx.state === 'suspended'){
+          ctx.resume();
+        }
+      }catch(e){}
+      document.removeEventListener('pointerdown', resumeAudioOnInteraction);
+    }
+    document.addEventListener('pointerdown', resumeAudioOnInteraction, { once: true });
+
+  })();
+  </script>
+</body>
+</html>
